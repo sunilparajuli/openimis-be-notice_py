@@ -79,3 +79,5 @@ class NoticeMutation(core_models.UUIDModel, core_models.ObjectMutation):
     class Meta:
         managed = True
         db_table = "tbl_noticeMutations"
+
+

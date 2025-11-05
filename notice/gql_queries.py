@@ -41,6 +41,7 @@ class NoticeGQLType(DjangoObjectType):
             "description": ["icontains"],
             "priority": ["exact"],
             "created_at": ["exact", "lt", "lte", "gt", "gte"],
+            "is_active" : ["exact"],
             **prefix_filterset("health_facility__", HealthFacilityGQLType._meta.filter_fields),
 
         }

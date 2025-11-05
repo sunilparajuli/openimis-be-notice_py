@@ -16,14 +16,20 @@ from core.schema import signal_mutation_module_validate
 from graphene import ObjectType, List
 
 
+
+
 class Query(graphene.ObjectType):
     notices = OrderedDjangoFilterConnectionField(
         NoticeGQLType,
+        fetch_all=graphene.Boolean(required=False)
     )
     notice_attachments = OrderedDjangoFilterConnectionField(
             NoticeAttachmentGQLType,
             orderBy=graphene.List(of_type=graphene.String),
-        )    
+        ) 
+
+
+
     def resolve_notice_attachments(self, info, **kwargs):
         if not info.context.user.has_perms("notice.view_notice_attachment"):
             raise PermissionDenied("Unauthorized")
@@ -31,6 +37,7 @@ class Query(graphene.ObjectType):
         if "notice_Uuid" in kwargs:
             queryset = queryset.filter(notice__uuid=kwargs["notice_Uuid"])
         return queryset
+    
 
 class Mutation(graphene.ObjectType):
     create_notice = CreateNoticeMutation.Field()
