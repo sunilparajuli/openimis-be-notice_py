@@ -36,7 +36,6 @@ class NoticeGQLType(DjangoObjectType):
         interfaces = (graphene.relay.Node,)
         filter_fields = {
             "uuid": ["exact"],
-            "id": ["exact"],
             "title": ["icontains"],
             "description": ["icontains"],
             "priority": ["exact"],

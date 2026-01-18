@@ -184,7 +184,9 @@ class CreateNoticeMutation(OpenIMISMutation):
             if data.get('health_facility_id'):
                 health_facility = HealthFacility.objects.get(id=data.get("health_facility_id"))
             
+            import uuid
             notice = Notice(
+                uuid=uuid.uuid4(),
                 title=data["title"],
                 description=data["description"],
                 priority=data["priority"],

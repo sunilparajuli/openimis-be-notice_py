@@ -34,7 +34,7 @@ class Notice(models.Model):
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        db_table = 'tbl_notices'
+        db_table = 'tblNotices'
 
     def __str__(self):
         return f"{self.title} ({self.priority}) - {self.health_facility}"
@@ -45,9 +45,9 @@ class Notice(models.Model):
 
 class NoticeAttachment(core_models.UUIDModel, core_models.UUIDVersionedModel):
     id = models.AutoField(primary_key=True)
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)  
+    # uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)  
     notice = models.ForeignKey(
-        Notice, on_delete=models.CASCADE, related_name='attachments')
+        Notice, on_delete=models.CASCADE, related_name='notice_attachments')
     general_type = models.CharField(
         max_length=4,
         choices=(('FILE', 'File'), ('URL', 'URL')),
@@ -64,7 +64,7 @@ class NoticeAttachment(core_models.UUIDModel, core_models.UUIDVersionedModel):
     document = models.TextField(blank=True, null=True, help_text="Base64-encoded file content if general_type is 'FILE'.")
 
     class Meta:
-        db_table = 'tbl_noticeAttachments'
+        db_table = 'tblNoticeAttachments'
 
     def __str__(self):
         return f"{self.title or self.filename or 'Unnamed'} - {self.notice.title}"
@@ -72,12 +72,12 @@ class NoticeAttachment(core_models.UUIDModel, core_models.UUIDVersionedModel):
 
 class NoticeMutation(core_models.UUIDModel, core_models.ObjectMutation):
     notice = models.ForeignKey(Notice, models.DO_NOTHING,
-                                 related_name='mutations')
+                                 related_name='notice_mutations')
     mutation = models.ForeignKey(
-        core_models.MutationLog, models.DO_NOTHING, related_name='category')
+        core_models.MutationLog, models.DO_NOTHING, related_name='notice_category')
 
     class Meta:
         managed = True
-        db_table = "tbl_noticeMutations"
+        db_table = "notice_NoticeMutations"
 
 
