@@ -13,7 +13,9 @@ class Notice(models.Model):
         ('HIGH', 'High'),
     )
 
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    uuid = models.CharField(
+        max_length=36, default=uuid.uuid4, unique=True
+    )
     id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=255)
     description = models.TextField()
@@ -45,7 +47,9 @@ class Notice(models.Model):
 
 class NoticeAttachment(core_models.UUIDModel, core_models.UUIDVersionedModel):
     id = models.AutoField(primary_key=True)
-    # uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)  
+    uuid = models.CharField(
+        max_length=36, default=uuid.uuid4, unique=True
+    )
     notice = models.ForeignKey(
         Notice, on_delete=models.CASCADE, related_name='notice_attachments')
     general_type = models.CharField(
@@ -78,6 +82,4 @@ class NoticeMutation(core_models.UUIDModel, core_models.ObjectMutation):
 
     class Meta:
         managed = True
-        db_table = "notice_NoticeMutations"
-
-
+        db_table = "notice_NoticeMutation"

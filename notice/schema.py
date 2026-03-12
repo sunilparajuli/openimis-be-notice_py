@@ -12,6 +12,7 @@ from .gql_mutations import CreateNoticeMutation, UpdateNoticeMutation, DeleteNot
                     CreateNoticeAttachmentMutation, UpdateNoticeAttachmentMutation, \
                      DeleteNoticeAttachmentMutation
 from .models import NoticeMutation
+from .apps import NoticeConfig
 from core.schema import signal_mutation_module_validate
 from graphene import ObjectType, List
 
@@ -30,8 +31,13 @@ class Query(graphene.ObjectType):
 
 
 
+    def resolve_notices(self, info, **kwargs):
+        if not info.context.user.has_perms(NoticeConfig.gql_query_notices_perms):
+            raise PermissionDenied("Unauthorized")
+        return Notice.objects.all()
+
     def resolve_notice_attachments(self, info, **kwargs):
-        if not info.context.user.has_perms("notice.view_notice_attachment"):
+        if not info.context.user.has_perms(NoticeConfig.gql_query_notices_perms):
             raise PermissionDenied("Unauthorized")
         queryset = NoticeAttachment.objects.filter(*filter_validity())
         if "notice_Uuid" in kwargs:

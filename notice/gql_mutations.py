@@ -2,6 +2,7 @@ import logging
 import graphene
 from .models import Notice, NoticeAttachment
 from .services import NotificationService  # Import the new service
+from .apps import NoticeConfig
 from core.schema import OpenIMISMutation
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
@@ -177,7 +178,7 @@ class CreateNoticeMutation(OpenIMISMutation):
         try:
             if isinstance(user, AnonymousUser) or not user.id:
                 raise ValidationError("Authentication required")
-            if not user.has_perms(["notice.add_notice"]):
+            if not user.has_perms(NoticeConfig.gql_mutation_create_notices_perms):
                 raise PermissionDenied("Unauthorized")
                 
             health_facility = None
@@ -265,7 +266,7 @@ class UpdateNoticeMutation(OpenIMISMutation):
         try:
             if isinstance(user, AnonymousUser) or not user.id:
                 raise ValidationError("Authentication required")
-            if not user.has_perms(["notice.change_notice"]):
+            if not user.has_perms(NoticeConfig.gql_mutation_update_notices_perms):
                 raise PermissionDenied("Unauthorized")
 
             notice = Notice.objects.get(uuid=data["uuid"], is_active=True)
@@ -304,7 +305,7 @@ class DeleteNoticeMutation(OpenIMISMutation):
         try:
             if isinstance(user, AnonymousUser) or not user.id:
                 raise ValidationError("Authentication required")
-            if not user.has_perms(["notice.delete_notice"]):
+            if not user.has_perms(NoticeConfig.gql_mutation_delete_notices_perms):
                 raise PermissionDenied("Unauthorized")
 
             errors = []
@@ -323,32 +324,34 @@ class DeleteNoticeMutation(OpenIMISMutation):
             return [{"message": "Failed to delete notices", "detail": str(exc)}]
 
 
-class ToggleNoticeStatusMutation(OpenIMISMutation):
-    _mutation_module = "notice"
-    _mutation_class = "ToggleNoticeStatusMutation"
+class ToggleNoticeStatusMutation(graphene.Mutation):
+    """Simple mutation that bypasses OpenIMIS mutation log - no NoticeMutation table needed."""
+    success = graphene.Boolean()
+    error = graphene.String()
 
-    class Input(OpenIMISMutation.Input):
+    class Arguments:
         uuid = graphene.UUID(required=True)
         is_active = graphene.Boolean(required=True)
 
     @classmethod
-    def async_mutate(cls, user, **data):
+    def mutate(cls, root, info, uuid, is_active):
+        user = info.context.user
         try:
             if isinstance(user, AnonymousUser) or not user.id:
                 raise ValidationError("Authentication required")
-            if not user.has_perms(["notice.change_notice"]):
+            if not user.has_perms(NoticeConfig.gql_mutation_toggle_notice_status_perms):
                 raise PermissionDenied("Unauthorized")
 
-            notice = Notice.objects.get(uuid=data["uuid"])
-            notice.is_active = data["is_active"]
+            notice = Notice.objects.get(uuid=uuid)
+            notice.is_active = is_active
             notice.save()
-            return None
-            
+            return ToggleNoticeStatusMutation(success=True, error=None)
+
         except Notice.DoesNotExist:
-            return [{"message": "Notice not found", "detail": str(data["uuid"])}]
+            return ToggleNoticeStatusMutation(success=False, error=f"Notice not found: {uuid}")
         except Exception as exc:
             logger.error(f"Failed to toggle notice status: {str(exc)}")
-            return [{"message": "Failed to toggle notice status", "detail": str(exc)}]
+            return ToggleNoticeStatusMutation(success=False, error=str(exc))
 
 
 class SendNoticeNotificationMutation(OpenIMISMutation):
