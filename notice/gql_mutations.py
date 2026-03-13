@@ -354,111 +354,6 @@ class ToggleNoticeStatusMutation(graphene.Mutation):
             return ToggleNoticeStatusMutation(success=False, error=str(exc))
 
 
-class SendNoticeNotificationMutation(OpenIMISMutation):
-    """
-    Unified mutation to send notifications (replaces separate email/SMS mutations)
-    """
-    _mutation_module = "notice"
-    _mutation_class = "SendNoticeNotificationMutation"
-
-    class Input(OpenIMISMutation.Input):
-        uuid = graphene.UUID(required=True)
-        notification_types = List(String, required=False)  # ['email', 'sms'] or None for all
-        recipients = List(String, required=False)  # Optional custom recipient list
-        use_async = Boolean(required=False)  # Control async/sync execution
-
-    @classmethod
-    def async_mutate(cls, user, **data):
-        try:
-            if isinstance(user, AnonymousUser) or not user.id:
-                raise ValidationError("Authentication required")
-            if not user.has_perms(["notice.send_notification"]):  # Updated permission
-                raise PermissionDenied("Unauthorized")
-
-            notice = Notice.objects.get(uuid=data["uuid"])
-            notification_types = data.get("notification_types", ["email"])
-            custom_recipients = data.get("recipients")
-            use_async = data.get("use_async", True)  # Default to async if available
-            
-            # If custom recipients are provided, handle them directly
-            if custom_recipients:
-                notification_service = NotificationService()
-                channels = {}
-                
-                for notification_type in notification_types:
-                    channels[notification_type] = custom_recipients
-                
-                # Send notifications directly (synchronously) when using custom recipients
-                results = notification_service.send_multi_channel(
-                    channels=channels,
-                    title=notice.title,
-                    description=notice.description,
-                    priority=notice.priority
-                )
-                
-                # Check if any failed
-                failed_channels = [ch for ch, result in results.items() if not result['success']]
-                if failed_channels:
-                    error_details = "; ".join([f"{ch}: {results[ch]['error']}" for ch in failed_channels])
-                    return [{"message": f"Failed to send to some channels", "detail": error_details}]
-                
-            else:
-                # Use standard recipients from health facility
-                success, result = execute_notification_task(
-                    notice.id, 
-                    notification_types, 
-                    use_async
-                )
-                
-                if not success:
-                    return [{"message": "Failed to send notification", "detail": result.get('error', 'Unknown error')}]
-            
-            return None  # Success
-            
-        except Notice.DoesNotExist:
-            return [{"message": "Notice not found", "detail": str(data["uuid"])}]
-        except Exception as exc:
-            logger.error(f"Failed to send notification: {str(exc)}")
-            return [{"message": "Failed to send notification", "detail": str(exc)}]
-
-
-# Legacy mutations for backward compatibility
-class SendNoticeEmailMutation(OpenIMISMutation):
-    """Legacy mutation - use SendNoticeNotificationMutation instead"""
-    _mutation_module = "notice"
-    _mutation_class = "SendNoticeEmailMutation"
-
-    class Input(OpenIMISMutation.Input):
-        uuid = graphene.UUID(required=True)
-
-    @classmethod
-    def async_mutate(cls, user, **data):
-        # Delegate to the new unified mutation
-        return SendNoticeNotificationMutation.async_mutate(
-            user, 
-            uuid=data["uuid"], 
-            notification_types=["email"]
-        )
-
-
-class SendNoticeSMSMutation(OpenIMISMutation):
-    """Legacy mutation - use SendNoticeNotificationMutation instead"""  
-    _mutation_module = "notice"
-    _mutation_class = "SendNoticeSMSMutation"
-
-    class Input(OpenIMISMutation.Input):
-        uuid = graphene.UUID(required=True)
-
-    @classmethod
-    def async_mutate(cls, user, **data):
-        # Delegate to the new unified mutation
-        return SendNoticeNotificationMutation.async_mutate(
-            user, 
-            uuid=data["uuid"], 
-            notification_types=["sms"]
-        )
-
-
 class CreateNoticeAttachmentMutation(OpenIMISMutation):
     _mutation_module = "notice"
     _mutation_class = "CreateNoticeAttachmentMutation"
@@ -484,6 +379,12 @@ class CreateNoticeAttachmentMutation(OpenIMISMutation):
                 
             notice = Notice.objects.get(uuid=data["notice_uuid"])
             
+            client_mutation_id = data.get("client_mutation_id")
+            if client_mutation_id:
+                data.pop('client_mutation_id')
+            if "client_mutation_label" in data:
+                data.pop('client_mutation_label')
+
             attachment = NoticeAttachment(
                 notice=notice,
                 general_type=data.get("general_type", "document"),
@@ -495,7 +396,14 @@ class CreateNoticeAttachmentMutation(OpenIMISMutation):
                 url=data.get("url"),
                 document=data.get("document"),
             )
-            attachment.save()
+            
+            if client_mutation_id:
+                import uuid
+                mutation_uuid = uuid.UUID(client_mutation_id)
+                attachment.save(history_mutation_id=mutation_uuid)
+            else:
+                attachment.save()
+                
             return None  # Success, no errors
             
         except Exception as exc:
@@ -530,6 +438,13 @@ class UpdateNoticeAttachmentMutation(OpenIMISMutation):
                 raise PermissionDenied("Unauthorized")
 
             attachment = NoticeAttachment.objects.get(uuid=data["uuid"])
+            
+            client_mutation_id = data.get("client_mutation_id")
+            if client_mutation_id:
+                data.pop('client_mutation_id')
+            if "client_mutation_label" in data:
+                data.pop('client_mutation_label')
+                
             attachment.general_type = data["general_type"]
             attachment.type = data.get("type")
             attachment.title = data.get("title")
@@ -538,7 +453,14 @@ class UpdateNoticeAttachmentMutation(OpenIMISMutation):
             attachment.mime = data.get("mime")
             attachment.url = data.get("url")
             attachment.document = data.get("document")
-            attachment.save()
+            
+            if client_mutation_id:
+                import uuid
+                mutation_uuid = uuid.UUID(client_mutation_id)
+                attachment.save(history_mutation_id=mutation_uuid)
+            else:
+                attachment.save()
+                
             return None  # Success, no errors
             
         except Exception as exc:
@@ -565,13 +487,20 @@ class DeleteNoticeAttachmentMutation(OpenIMISMutation):
                 raise PermissionDenied("Unauthorized")
                 
             # Clean up client mutation fields
-            if "client_mutation_id" in data:
+            client_mutation_id = data.get("client_mutation_id")
+            if client_mutation_id:
                 data.pop('client_mutation_id')
             if "client_mutation_label" in data:
                 data.pop('client_mutation_label')
             
             attachment = NoticeAttachment.objects.get(id=data["id"])
-            attachment.delete()
+            if client_mutation_id:
+                import uuid
+                mutation_uuid = uuid.UUID(client_mutation_id)
+                attachment.delete(history_mutation_id=mutation_uuid)
+            else:
+                attachment.delete()
+                
             return None  # Success, no errors
             
         except Exception as exc:

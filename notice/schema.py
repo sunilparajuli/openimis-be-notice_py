@@ -8,8 +8,7 @@ from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
 from .gql_queries import *
 from .gql_mutations import CreateNoticeMutation, UpdateNoticeMutation, DeleteNoticeMutation, \
-                 ToggleNoticeStatusMutation, SendNoticeEmailMutation, SendNoticeSMSMutation,\
-                    CreateNoticeAttachmentMutation, UpdateNoticeAttachmentMutation, \
+                 ToggleNoticeStatusMutation, CreateNoticeAttachmentMutation, UpdateNoticeAttachmentMutation, \
                      DeleteNoticeAttachmentMutation
 from .models import NoticeMutation
 from .apps import NoticeConfig
@@ -50,8 +49,6 @@ class Mutation(graphene.ObjectType):
     update_notice = UpdateNoticeMutation.Field()
     delete_notice = DeleteNoticeMutation.Field()
     toggle_notice_status = ToggleNoticeStatusMutation.Field()
-    send_notice_email = SendNoticeEmailMutation.Field()
-    send_notice_sms = SendNoticeSMSMutation.Field()
     create_notice_attachment = CreateNoticeAttachmentMutation.Field()
     update_notice_attachment = UpdateNoticeAttachmentMutation.Field()
     delete_notice_attachment = DeleteNoticeAttachmentMutation.Field()
@@ -66,11 +63,11 @@ def on_notice_mutation(**kwargs):
         return []  # No notices impacted
 
     impacted_notices = Notice.objects.filter(uuid__in=uuids).all()
-    for notice in impacted_notices:
-        NoticeMutation.objects.create(
-            notice=notice,
-            mutation_id=kwargs["mutation_log_id"]
-        )
+    # for notice in impacted_notices:
+    #     NoticeMutation.objects.create(
+    #         notice=notice,
+    #         mutation_id=kwargs["mutation_log_id"]
+    #     )
     
     return []  # Return empty list (consistent with signal expectations)
 
