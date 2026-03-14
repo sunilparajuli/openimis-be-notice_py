@@ -400,7 +400,7 @@ class CreateNoticeAttachmentMutation(OpenIMISMutation):
             if client_mutation_id:
                 import uuid
                 mutation_uuid = uuid.UUID(client_mutation_id)
-                attachment.save(history_mutation_id=mutation_uuid)
+                attachment.save()
             else:
                 attachment.save()
                 
@@ -457,7 +457,7 @@ class UpdateNoticeAttachmentMutation(OpenIMISMutation):
             if client_mutation_id:
                 import uuid
                 mutation_uuid = uuid.UUID(client_mutation_id)
-                attachment.save(history_mutation_id=mutation_uuid)
+                attachment.save()
             else:
                 attachment.save()
                 
@@ -497,7 +497,7 @@ class DeleteNoticeAttachmentMutation(OpenIMISMutation):
             if client_mutation_id:
                 import uuid
                 mutation_uuid = uuid.UUID(client_mutation_id)
-                attachment.delete(history_mutation_id=mutation_uuid)
+                attachment.delete()
             else:
                 attachment.delete()
                 
