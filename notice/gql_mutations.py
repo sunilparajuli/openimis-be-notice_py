@@ -8,6 +8,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext as _
 from location.models import HealthFacility
+from tasks_management.models import TaskGroup, TaskExecutor
 from graphene import String, Int, Boolean, Date, List, InputObjectType
 from typing import Optional
 from datetime import datetime
@@ -57,13 +58,25 @@ def _send_notice_notification_sync(notice_id, notification_types=None):
         
         # Get email recipients
         email_recipients = []
-        if hasattr(notice.health_facility, 'email') and notice.health_facility.email:
+        if notice.health_facility and hasattr(notice.health_facility, 'email') and notice.health_facility.email:
             email_recipients.append(notice.health_facility.email)
+        if notice.task_group:
+            executors = TaskExecutor.objects.filter(task_group=notice.task_group, is_deleted=False).select_related('user', 'user__i_user')
+            for ex in executors:
+                user_email = getattr(ex.user, 'email', None) or getattr(getattr(ex.user, 'i_user', None), 'email', None)
+                if user_email and user_email not in email_recipients:
+                    email_recipients.append(user_email)
         
-        # Get SMS recipients (customize based on your model structure)
+        # Get SMS recipients
         sms_recipients = []
-        if hasattr(notice.health_facility, 'phone') and notice.health_facility.phone:
+        if notice.health_facility and hasattr(notice.health_facility, 'phone') and notice.health_facility.phone:
             sms_recipients.append(notice.health_facility.phone)
+        if notice.task_group:
+            executors = TaskExecutor.objects.filter(task_group=notice.task_group, is_deleted=False).select_related('user__i_user')
+            for ex in executors:
+                user_phone = getattr(getattr(ex.user, 'i_user', None), 'phone', None)
+                if user_phone and user_phone not in sms_recipients:
+                    sms_recipients.append(user_phone)
         
         # Build channels dict based on what's requested and available
         if not notification_types:
@@ -166,6 +179,7 @@ class CreateNoticeMutation(OpenIMISMutation):
         description = String(required=True)
         priority = String(required=True)
         health_facility_id = Int(required=False, source='healthFacilityId')
+        task_group_id = Int(required=False, source='taskGroupId')
         schedule_publish = Boolean(required=False)
         publish_start_date = Date(required=False)
         created_at = Date(required=False, source='createdAt')
@@ -185,6 +199,13 @@ class CreateNoticeMutation(OpenIMISMutation):
             health_facility = None
             if data.get('health_facility_id'):
                 health_facility = HealthFacility.objects.get(id=data.get("health_facility_id"))
+
+            task_group = None
+            if data.get('task_group_id'):
+                task_group = TaskGroup.objects.get(id=data.get("task_group_id"))
+
+            if not health_facility and not task_group:
+                raise ValidationError("Either Health Facility or Task Group is required")
             
             import uuid
             created_at = data.get("created_at") or data.get("createdAt") or datetime.now()
@@ -194,6 +215,7 @@ class CreateNoticeMutation(OpenIMISMutation):
                 description=data["description"],
                 priority=data["priority"],
                 health_facility=health_facility,
+                task_group=task_group,
                 schedule_publish=data.get("schedule_publish", False),
                 publish_start_date=data.get("publish_start_date"),
                 created_at=created_at,
@@ -283,6 +305,7 @@ class UpdateNoticeMutation(OpenIMISMutation):
         description = String(required=True)
         priority = String(required=True)
         health_facility_id = Int(required=False, source='healthFacilityId')
+        task_group_id = Int(required=False, source='taskGroupId')
         schedule_publish = Boolean(required=False)
         publish_start_date = Date(required=False)
         created_at = Date(required=False, source='createdAt')
@@ -315,7 +338,19 @@ class UpdateNoticeMutation(OpenIMISMutation):
             if "priority" in data:
                 notice.priority = data["priority"]
             if "health_facility_id" in data:
-                notice.health_facility = HealthFacility.objects.get(id=data["health_facility_id"])
+                if data["health_facility_id"]:
+                    notice.health_facility = HealthFacility.objects.get(id=data["health_facility_id"])
+                else:
+                    notice.health_facility = None
+            if "task_group_id" in data:
+                if data["task_group_id"]:
+                    notice.task_group = TaskGroup.objects.get(id=data["task_group_id"])
+                else:
+                    notice.task_group = None
+
+            if not notice.health_facility and not notice.task_group:
+                raise ValidationError("Either Health Facility or Task Group is required")
+
             if "schedule_publish" in data:
                 notice.schedule_publish = data["schedule_publish"]
             if "publish_start_date" in data:

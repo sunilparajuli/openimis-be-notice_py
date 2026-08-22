@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from location.models import HealthFacility 
+from tasks_management.models import TaskGroup
 from core import fields, TimeUtils, models as core_models
 
 class Notice(core_models.VersionedModel):
@@ -28,6 +29,14 @@ class Notice(core_models.VersionedModel):
         blank=True,
         db_column="HFID"
     )    
+    task_group = models.ForeignKey(
+        TaskGroup,
+        on_delete=models.CASCADE,
+        related_name='notices',
+        null=True,
+        blank=True,
+        db_column="TaskGroupID"
+    )
     created_at = fields.DateTimeField(default=TimeUtils.now, db_column="CreatedAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="UpdatedAt")
     schedule_publish = models.BooleanField(default=False, db_column="SchedulePublish")  
@@ -38,7 +47,8 @@ class Notice(core_models.VersionedModel):
         db_table = 'tblNotices'
 
     def __str__(self):
-        return f"{self.title} ({self.priority}) - {self.health_facility}"
+        target = self.health_facility or self.task_group or "All"
+        return f"{self.title} ({self.priority}) - {target}"
 
 
 class NoticeAttachment(core_models.VersionedModel):

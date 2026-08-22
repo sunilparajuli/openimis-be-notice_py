@@ -4,6 +4,8 @@ from graphene_django import DjangoObjectType
 from django.utils.translation import gettext as _
 from location.schema import HealthFacilityGQLType
 from location import models as location_models
+from tasks_management.gql_queries import TaskGroupGQLType
+from tasks_management.models import TaskExecutor
 from core import models as core_models
 from graphql import ResolveInfo
 from django.db.models import Q
@@ -30,6 +32,7 @@ class NoticeGQLType(DjangoObjectType):
             "validity_from": ["exact", "lt", "lte", "gt", "gte"],
             "validity_to": ["exact", "isnull"],
             **prefix_filterset("health_facility__", HealthFacilityGQLType._meta.filter_fields),
+            **prefix_filterset("task_group__", TaskGroupGQLType._meta.filter_fields),
         }
         connection_class = ExtendedConnection 
     
@@ -41,21 +44,28 @@ class NoticeGQLType(DjangoObjectType):
         """
         Default queryset filtering:
         1. Apply validity filter (validity_to__isnull=True).
-        2. If health_facility is null, show to all; otherwise, filter by user's health facility (row security).
-        3. Only show notices where current date is after publish_start_date (if set).
+        2. Filter by user's health facility or task group (row security).
         """
         user = getattr(info.context, "user", None)
         from django.conf import settings
         from datetime import datetime
-        current_date = datetime.now()
         queryset = queryset.filter(*filter_validity())
         if settings.ROW_SECURITY and user and not user.is_anonymous:
             i_user = getattr(user, "i_user", None) or getattr(user, "_u", None)
-            if i_user and hasattr(i_user, 'health_facility_id') and i_user.health_facility_id:
-                queryset = queryset.filter(
-                    Q(health_facility_id=i_user.health_facility_id) |
-                    Q(health_facility__isnull=True)
-                )
+            hf_id = getattr(i_user, 'health_facility_id', None) if i_user else None
+
+            # Get task groups where the user is an executor
+            user_task_group_ids = list(
+                TaskExecutor.objects.filter(user=user, is_deleted=False).values_list('task_group_id', flat=True)
+            )
+
+            q_filter = Q(health_facility__isnull=True, task_group__isnull=True)
+            if hf_id:
+                q_filter |= Q(health_facility_id=hf_id)
+            if user_task_group_ids:
+                q_filter |= Q(task_group_id__in=user_task_group_ids)
+
+            queryset = queryset.filter(q_filter)
 
         return queryset.order_by('-created_at')
 
