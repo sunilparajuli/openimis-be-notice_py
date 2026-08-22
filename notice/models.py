@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from location.models import HealthFacility 
 from core import fields, TimeUtils, models as core_models
 
-class Notice(models.Model):
+class Notice(core_models.VersionedModel):
     PRIORITY_CHOICES = (
         ('LOW', 'Low'),
         ('MEDIUM', 'Medium'),
@@ -14,26 +14,25 @@ class Notice(models.Model):
     )
 
     uuid = models.CharField(
-        max_length=36, default=uuid.uuid4, unique=True
+        max_length=36, default=uuid.uuid4, unique=True, db_column="NoticeUUID"
     )
-    id = models.AutoField(primary_key=True)
-    title = models.CharField(max_length=255)
-    description = models.TextField()
-    priority = models.CharField(max_length=6, choices=PRIORITY_CHOICES, default='MEDIUM')
+    id = models.AutoField(primary_key=True, db_column="NoticeID")
+    title = models.CharField(max_length=255, db_column="Title")
+    description = models.TextField(db_column="Description")
+    priority = models.CharField(max_length=6, choices=PRIORITY_CHOICES, default='MEDIUM', db_column="Priority")
     health_facility = models.ForeignKey(
         HealthFacility,
         on_delete=models.CASCADE,
         related_name='notices',
         null=True,  
-        blank=True  
+        blank=True,
+        db_column="HFID"
     )    
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    schedule_publish = models.BooleanField(default=False)  
-    publish_start_date = models.DateTimeField(null=True, blank=True)  
-    validity_from = models.DateTimeField(auto_now_add=True)
-    validity_to = models.DateTimeField(null=True, blank=True)
-    is_active = models.BooleanField(default=True)
+    created_at = fields.DateTimeField(default=TimeUtils.now, db_column="CreatedAt")
+    updated_at = models.DateTimeField(auto_now=True, db_column="UpdatedAt")
+    schedule_publish = models.BooleanField(default=False, db_column="SchedulePublish")  
+    publish_start_date = models.DateTimeField(null=True, blank=True, db_column="PublishStartDate")  
+    is_active = models.BooleanField(default=True, db_column="IsActive")
 
     class Meta:
         db_table = 'tblNotices'
@@ -41,31 +40,30 @@ class Notice(models.Model):
     def __str__(self):
         return f"{self.title} ({self.priority}) - {self.health_facility}"
 
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
 
-
-class NoticeAttachment(core_models.UUIDModel, core_models.UUIDVersionedModel):
-    id = models.AutoField(primary_key=True)
+class NoticeAttachment(core_models.VersionedModel):
+    id = models.AutoField(primary_key=True, db_column="AttachmentID")
     uuid = models.CharField(
-        max_length=36, default=uuid.uuid4, unique=True
+        max_length=36, default=uuid.uuid4, unique=True, db_column="AttachmentUUID"
     )
     notice = models.ForeignKey(
-        Notice, on_delete=models.CASCADE, related_name='notice_attachments')
+        Notice, on_delete=models.CASCADE, related_name='notice_attachments', db_column="NoticeID"
+    )
     general_type = models.CharField(
         max_length=4,
         choices=(('FILE', 'File'), ('URL', 'URL')),
         default='FILE',
+        db_column="GeneralType",
         help_text="Indicates whether this is a file attachment or a URL link."
     )
-    type = models.TextField(blank=True, null=True, help_text="Custom type description if needed.")
-    title = models.TextField(blank=True, null=True, help_text="Title or name of the attachment.")
-    date = fields.DateField(blank=True, default=TimeUtils.now, help_text="Date of the attachment.")
-    filename = models.TextField(blank=True, null=True, help_text="Original filename of the uploaded file.")
-    mime = models.TextField(blank=True, null=True, help_text="MIME type of the file (e.g., 'application/pdf').")
-    module = models.TextField(blank=False, null=True, default="notice", help_text="Module identifier for future core integration.")
-    url = models.TextField(blank=True, null=True, help_text="URL link to the attachment if general_type is 'URL'.")
-    document = models.TextField(blank=True, null=True, help_text="Base64-encoded file content if general_type is 'FILE'.")
+    type = models.TextField(blank=True, null=True, db_column="Type", help_text="Custom type description if needed.")
+    title = models.TextField(blank=True, null=True, db_column="Title", help_text="Title or name of the attachment.")
+    date = fields.DateField(blank=True, default=TimeUtils.now, db_column="Date", help_text="Date of the attachment.")
+    filename = models.TextField(blank=True, null=True, db_column="Filename", help_text="Original filename of the uploaded file.")
+    mime = models.TextField(blank=True, null=True, db_column="Mime", help_text="MIME type of the file (e.g., 'application/pdf').")
+    module = models.TextField(blank=False, null=True, default="notice", db_column="Module", help_text="Module identifier for future core integration.")
+    url = models.TextField(blank=True, null=True, db_column="URL", help_text="URL link to the attachment if general_type is 'URL'.")
+    document = models.TextField(blank=True, null=True, db_column="Document", help_text="Base64-encoded file content if general_type is 'FILE'.")
 
     class Meta:
         db_table = 'tblNoticeAttachments'
@@ -76,9 +74,9 @@ class NoticeAttachment(core_models.UUIDModel, core_models.UUIDVersionedModel):
 
 class NoticeMutation(core_models.UUIDModel, core_models.ObjectMutation):
     notice = models.ForeignKey(Notice, models.DO_NOTHING,
-                                 related_name='notice_mutations')
+                               related_name='notice_mutations', db_column="NoticeID")
     mutation = models.ForeignKey(
-        core_models.MutationLog, models.DO_NOTHING, related_name='notice_category')
+        core_models.MutationLog, models.DO_NOTHING, related_name='notice_category', db_column="MutationLogID")
 
     class Meta:
         managed = True

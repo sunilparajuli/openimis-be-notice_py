@@ -168,6 +168,7 @@ class CreateNoticeMutation(OpenIMISMutation):
         health_facility_id = Int(required=False, source='healthFacilityId')
         schedule_publish = Boolean(required=False)
         publish_start_date = Date(required=False)
+        created_at = Date(required=False, source='createdAt')
         attachments = List(NoticeAttachmentInput, required=False)
         auto_send_notification = Boolean(required=False)  # New field to control auto-sending
         notification_types = List(String, required=False)  # New field to specify notification types
@@ -186,6 +187,7 @@ class CreateNoticeMutation(OpenIMISMutation):
                 health_facility = HealthFacility.objects.get(id=data.get("health_facility_id"))
             
             import uuid
+            created_at = data.get("created_at") or data.get("createdAt") or datetime.now()
             notice = Notice(
                 uuid=uuid.uuid4(),
                 title=data["title"],
@@ -194,6 +196,7 @@ class CreateNoticeMutation(OpenIMISMutation):
                 health_facility=health_facility,
                 schedule_publish=data.get("schedule_publish", False),
                 publish_start_date=data.get("publish_start_date"),
+                created_at=created_at,
                 is_active=False
             )
             notice.save()
@@ -243,6 +246,30 @@ class CreateNoticeMutation(OpenIMISMutation):
             }]
 
 
+from graphql_relay import from_global_id
+
+def _get_notice_by_uuid_or_id(uuid_or_id):
+    if not uuid_or_id:
+        return None
+    # 1. Try UUID string
+    try:
+        return Notice.objects.get(uuid=uuid_or_id, validity_to__isnull=True)
+    except Exception:
+        pass
+    # 2. Try Relay global id
+    try:
+        _type, _id = from_global_id(str(uuid_or_id))
+        if _id:
+            return Notice.objects.get(id=int(_id), validity_to__isnull=True)
+    except Exception:
+        pass
+    # 3. Try integer ID
+    try:
+        return Notice.objects.get(id=int(uuid_or_id), validity_to__isnull=True)
+    except Exception:
+        pass
+    return None
+
 class UpdateNoticeMutation(OpenIMISMutation):
     _mutation_module = "notice"
     _mutation_class = "UpdateNoticeMutation"
@@ -250,13 +277,15 @@ class UpdateNoticeMutation(OpenIMISMutation):
     class Input(OpenIMISMutation.Input):
         client_mutation_id = String(required=False)
         client_mutation_label = String(required=False)
-        uuid = String(required=True)
+        uuid = String(required=False)
+        id = String(required=False)
         title = String(required=True)
         description = String(required=True)
         priority = String(required=True)
         health_facility_id = Int(required=False, source='healthFacilityId')
         schedule_publish = Boolean(required=False)
         publish_start_date = Date(required=False)
+        created_at = Date(required=False, source='createdAt')
         auto_send_notification = Boolean(required=False)  
         notification_types = List(String, required=False) 
         use_async = Boolean(required=False)  
@@ -269,7 +298,12 @@ class UpdateNoticeMutation(OpenIMISMutation):
             if not user.has_perms(NoticeConfig.gql_mutation_update_notices_perms):
                 raise PermissionDenied("Unauthorized")
 
-            notice = Notice.objects.get(uuid=data["uuid"], is_active=True)
+            target_id = data.get("uuid") or data.get("id")
+            notice = _get_notice_by_uuid_or_id(target_id)
+            if not notice:
+                raise Notice.DoesNotExist(f"Notice with identifier '{target_id}' not found")
+
+            notice.save_history()
             if "client_mutation_id" in data:
                 data.pop('client_mutation_id')
             if "client_mutation_label" in data:
@@ -282,12 +316,20 @@ class UpdateNoticeMutation(OpenIMISMutation):
                 notice.priority = data["priority"]
             if "health_facility_id" in data:
                 notice.health_facility = HealthFacility.objects.get(id=data["health_facility_id"])
+            if "schedule_publish" in data:
+                notice.schedule_publish = data["schedule_publish"]
+            if "publish_start_date" in data:
+                notice.publish_start_date = data["publish_start_date"]
+            if "created_at" in data and data["created_at"]:
+                notice.created_at = data["created_at"]
+            elif "createdAt" in data and data["createdAt"]:
+                notice.created_at = data["createdAt"]
                 
             notice.save()
             return None  # Success, no errors
             
-        except Notice.DoesNotExist:
-            return [{"message": "Notice not found", "detail": str(data["uuid"])}]
+        except Notice.DoesNotExist as dne:
+            return [{"message": "Notice not found", "detail": str(dne)}]
         except Exception as exc:
             logger.error(f"Failed to update notice: {str(exc)}")
             return [{"message": "Failed to update notice", "detail": str(exc)}]
@@ -298,7 +340,7 @@ class DeleteNoticeMutation(OpenIMISMutation):
     _mutation_class = "DeleteNoticeMutation"
 
     class Input(OpenIMISMutation.Input):
-        uuids = graphene.List(graphene.UUID, required=True)
+        uuids = graphene.List(graphene.String, required=True)
 
     @classmethod
     def async_mutate(cls, user, **data):
@@ -309,13 +351,12 @@ class DeleteNoticeMutation(OpenIMISMutation):
                 raise PermissionDenied("Unauthorized")
 
             errors = []
-            for uuid in data["uuids"]:
-                try:
-                    notice = Notice.objects.get(uuid=uuid, is_active=True)
-                    notice.is_active = False  # Soft delete
-                    notice.save()
-                except Notice.DoesNotExist:
-                    errors.append({"message": "Notice not found", "detail": str(uuid)})
+            for uuid_or_id in data["uuids"]:
+                notice = _get_notice_by_uuid_or_id(uuid_or_id)
+                if notice:
+                    notice.delete_history()
+                else:
+                    errors.append({"message": "Notice not found", "detail": str(uuid_or_id)})
             
             return errors if errors else None
             

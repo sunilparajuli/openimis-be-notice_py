@@ -1,54 +1,40 @@
 import graphene
-from core import prefix_filterset, ExtendedConnection,filter_validity
+from core import prefix_filterset, ExtendedConnection, filter_validity
 from graphene_django import DjangoObjectType
 from django.utils.translation import gettext as _
-import graphene
-from graphene_django import DjangoObjectType
 from location.schema import HealthFacilityGQLType
 from location import models as location_models
 from core import models as core_models
 from graphql import ResolveInfo
-from django.db.models import Q  # Add this import at the top for Q objects
+from django.db.models import Q
 
 from .models import Notice, NoticeAttachment
 
 
-class NoticePriority(graphene.Enum):
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-
-    @property
-    def description(self):
-        if self == NoticePriority.LOW:
-            return _("Low priority")
-        elif self == NoticePriority.MEDIUM:
-            return _("Medium priority")
-        elif self == NoticePriority.HIGH:
-            return _("High priority")
-        return ""
-
 class NoticeGQLType(DjangoObjectType):
     attachment_count = graphene.Int()
-    priority = NoticePriority()
+    priority = graphene.String()
     class Meta:
         model = Notice
         interfaces = (graphene.relay.Node,)
         filter_fields = {
+            "id": ["exact"],
             "uuid": ["exact"],
             "title": ["icontains"],
             "description": ["icontains"],
             "priority": ["exact"],
+            "is_active": ["exact"],
+            "schedule_publish": ["exact"],
+            "publish_start_date": ["exact", "lt", "lte", "gt", "gte"],
             "created_at": ["exact", "lt", "lte", "gt", "gte"],
-            "is_active" : ["exact"],
+            "validity_from": ["exact", "lt", "lte", "gt", "gte"],
+            "validity_to": ["exact", "isnull"],
             **prefix_filterset("health_facility__", HealthFacilityGQLType._meta.filter_fields),
-
         }
         connection_class = ExtendedConnection 
     
     def resolve_attachment_count(self, info):
-    # Count the number of attachments related to this notice
-        return self.attachments.count()
+        return self.notice_attachments.filter(*filter_validity()).count()
 
     @classmethod
     def get_queryset(cls, queryset, info):
@@ -58,20 +44,17 @@ class NoticeGQLType(DjangoObjectType):
         2. If health_facility is null, show to all; otherwise, filter by user's health facility (row security).
         3. Only show notices where current date is after publish_start_date (if set).
         """
-        user = info.context.user
+        user = getattr(info.context, "user", None)
         from django.conf import settings
         from datetime import datetime
-        user = info.context.user
         current_date = datetime.now()
-        if settings.ROW_SECURITY:
-            # TechnicalUsers don't have health_facility_id attribute
-            if hasattr(user._u, 'health_facility_id') and user._u.health_facility_id:
-                # Filter notices where health_facility matches user's HF or is null
+        queryset = queryset.filter(*filter_validity())
+        if settings.ROW_SECURITY and user and not user.is_anonymous:
+            i_user = getattr(user, "i_user", None) or getattr(user, "_u", None)
+            if i_user and hasattr(i_user, 'health_facility_id') and i_user.health_facility_id:
                 queryset = queryset.filter(
-                    Q(health_facility_id=user._u.health_facility_id) |
-                    Q(health_facility__isnull=True) |
-                    Q(publish_start_date__isnull=True) |
-                    Q(publish_start_date__gte=current_date)
+                    Q(health_facility_id=i_user.health_facility_id) |
+                    Q(health_facility__isnull=True)
                 )
 
         return queryset.order_by('-created_at')

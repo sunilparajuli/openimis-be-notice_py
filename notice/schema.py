@@ -63,11 +63,11 @@ def on_notice_mutation(**kwargs):
         return []  # No notices impacted
 
     impacted_notices = Notice.objects.filter(uuid__in=uuids).all()
-    # for notice in impacted_notices:
-    #     NoticeMutation.objects.create(
-    #         notice=notice,
-    #         mutation_id=kwargs["mutation_log_id"]
-    #     )
+    for notice in impacted_notices:
+        NoticeMutation.objects.create(
+            notice=notice,
+            mutation_id=kwargs["mutation_log_id"]
+        )
     
     return []  # Return empty list (consistent with signal expectations)
 
